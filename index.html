@@ -5735,15 +5735,38 @@
           // 地图中心：优先取已渲染 JSON 的 trip_center，否则取首日主区域中心
           const tripCenter = D.trip_center || (D.days[0] && D.days[0].center);
           const initCenter = tripCenter || [116.397, 39.908]; // 兜底北京（GCJ-02）
-          map = new AMap.Map('map', {
-            zoom: tripCenter ? 11 : 4,
-            center: initCenter,
-            viewMode: '2D',
-            mapStyle: 'amap://styles/normal'
-          });
-          setTimeout(() => map.getSize(), 100);
-          window.addEventListener('resize', () => { try { map.getSize(); } catch(e) {} });
-          updateMap(currentDay);
+          const mapEl = document.getElementById('map');
+          const build = () => {
+            if (map) return;
+            map = new AMap.Map('map', {
+              zoom: tripCenter ? 11 : 4,
+              center: initCenter,
+              viewMode: '2D',
+              mapStyle: 'amap://styles/normal'
+            });
+            // 高德不会自己跟随容器变化：显式 resize 一次，之后交给 ResizeObserver
+            setTimeout(() => { try { map.resize(); } catch (e) {} }, 120);
+            try {
+              if (mapEl && window.ResizeObserver) {
+                new ResizeObserver(() => { try { map.resize(); } catch (e) {} }).observe(mapEl);
+              }
+            } catch (e) {}
+            window.addEventListener('resize', () => { try { map.resize(); } catch (e) {} });
+            updateMap(currentDay);
+          };
+          // 关键：容器还可能是 0 高（面板折叠/布局未完成）时建图会得到 0×0 画布，
+          // 地图永久空白 —— 等到容器真的有尺寸再建。
+          if (!mapEl || mapEl.clientWidth === 0 || mapEl.clientHeight === 0) {
+            if (mapEl && window.ResizeObserver) {
+              const ro = new ResizeObserver(() => {
+                if (mapEl.clientWidth > 0 && mapEl.clientHeight > 0) { ro.disconnect(); build(); }
+              });
+              ro.observe(mapEl);
+            }
+            setTimeout(() => { if (!map) build(); }, 2500); // 兜底：2.5s 后无论如何都建
+          } else {
+            build();
+          }
         };
         script.onerror = () => {
           document.getElementById('map').style.display = 'none';
